@@ -38,7 +38,7 @@ class RejectReasonModal(discord.ui.Modal):
         notification_view.add_item(discord.ui.Button(
             style=discord.ButtonStyle.link,
             label="Servidor de Soporte",
-            url="https://discord.gg/eQ9uZSrrfZ"
+            url="https://discord.gg/RG4JM59bet"
         ))
         
         notification_sent = False
@@ -87,6 +87,130 @@ class RejectReasonModal(discord.ui.Modal):
         
         language = await get_server_language(interaction.guild.id)
         result_message = "Reporte rechazado ❌" if language == "es" else "Report rejected ❌"
+        if notification_sent:
+            if language == "es":
+                result_message += "\nEl usuario ha sido notificado."
+            else:
+                result_message += "\nThe user has been notified."
+        
+        await interaction.followup.send(result_message)
+
+class AcceptReasonModal(discord.ui.Modal):
+    def __init__(self, bot, usuario_reporter, servidor, usuario_reportado, message, embeds, files, report_reason):
+        super().__init__(title="Razón de aprobación")
+        self.bot = bot
+        self.usuario_reporter = usuario_reporter
+        self.servidor = servidor
+        self.usuario_reportado = usuario_reportado
+        self.message = message
+        self.embeds = embeds
+        self.files = files
+        self.report_reason = report_reason
+        
+        self.reason = discord.ui.TextInput(
+            label="Razón del reporte (puede modificarla)",
+            style=discord.TextStyle.paragraph,
+            placeholder="Puede modificar la razón o dejarla como está...",
+            required=True,
+            max_length=1000,
+            default=report_reason
+        )
+        self.add_item(self.reason)
+    
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        
+        updated_reason = self.reason.value
+        
+        uploaded_urls = []
+        for attachment in self.message.attachments:
+            try:
+                image_bytes = await attachment.read()
+                image_url = await upload_image_to_imgbb(image_bytes)
+                if image_url:
+                    uploaded_urls.append(image_url)
+            except Exception as e:
+                print(f"Error al subir imagen: {e}")
+
+        usuarios_reportados = []
+        if len(self.embeds) > 1:
+            embed = self.embeds[1]
+            for field in embed.fields:
+                if field.name == "Usuarios reportados":
+                    usuarios_texto = field.value.strip('```').strip()
+                    lines = usuarios_texto.split('\n')
+                    
+                    current_id = None
+                    for line in lines:
+                        if line.startswith("ID: "):
+                            current_id = int(line[4:])
+                            usuarios_reportados.append(current_id)
+
+        if not usuarios_reportados:
+            usuarios_reportados = [self.usuario_reportado.id]
+
+        for reported_user_id in usuarios_reportados:
+            await mongo_report_storage.store_report(
+                user_id=0,
+                server_id=0,
+                reported_user_id=reported_user_id,
+                reason=updated_reason,
+                imagen_files=uploaded_urls
+            )
+
+            await check_user_in_guilds(self.bot, reported_user_id, updated_reason)
+        
+        notification_view = discord.ui.View()
+        notification_view.add_item(discord.ui.Button(
+            style=discord.ButtonStyle.link,
+            label="Servidor de Soporte",
+            url="https://discord.gg/RG4JM59bet"
+        ))
+        
+        notification_sent = False
+        try:
+            user = await self.bot.fetch_user(self.usuario_reporter.id)
+            await user.send(
+                f"🇪🇸 Tu reporte contra {self.usuario_reportado.name} en el servidor {self.servidor.name} ha sido **aceptado**. Gracias por ayudarnos a mantener la comunidad segura.\n\n"
+                f"🇬🇧 Your report against {self.usuario_reportado.name} in the server {self.servidor.name} has been **accepted**. Thank you for helping us keep the community safe.",
+                view=notification_view
+            )
+            notification_sent = True
+        except:
+            try:
+                security_config = await get_specific_field(self.servidor.id, "security")
+                if security_config and "channel" in security_config:
+                    alert_channel_id = security_config["channel"]
+                    alert_channel = self.bot.get_channel(alert_channel_id)
+                    
+                    if alert_channel:
+                        await alert_channel.send(
+                            f"{self.usuario_reporter.mention}\n\n🇪🇸 Tu reporte contra {self.usuario_reportado.name} en el servidor {self.servidor.name} ha sido **aceptado**. Gracias por ayudarnos a mantener la comunidad segura.\n\n"
+                            f"🇬🇧 Your report against {self.usuario_reportado.name} in the server {self.servidor.name} has been **accepted**. Thank you for helping us keep the community safe.",
+                            view=notification_view
+                        )
+                        notification_sent = True
+            except:
+                pass
+        
+        accepted_channel = self.bot.get_channel(1359190746896535903)
+        
+        if accepted_channel:
+            if len(self.embeds) > 1 and updated_reason != self.report_reason:
+                self.embeds[0].description = f"### Razón reporte:\n```ansi\n{updated_reason}\n```\n"
+            
+            if len(self.embeds) > 1:
+                self.embeds[1].set_footer(
+                    text=f"Aprobado por: {interaction.user.name} • {datetime.datetime.now(pytz.timezone('Europe/Madrid')).strftime('%d/%m/%Y %H:%M')}",
+                    icon_url=interaction.user.avatar.url if interaction.user.avatar else None
+                )
+            
+            await accepted_channel.send(embeds=self.embeds, files=self.files)
+            
+            await self.message.delete()
+        
+        language = await get_server_language(interaction.guild.id)
+        result_message = "Reporte aceptado ✅" if language == "es" else "Report accepted ✅"
         if notification_sent:
             if language == "es":
                 result_message += "\nEl usuario ha sido notificado."
@@ -184,109 +308,25 @@ class ReportButtonView(discord.ui.View):
         for item in self.children:
             item.disabled = True
         
-        await interaction.response.defer(ephemeral=True)
+        message = interaction.message
+        embeds = message.embeds.copy()
         
-        uploaded_urls = []
-        for attachment in interaction.message.attachments:
-            try:
-                image_bytes = await attachment.read()
-                image_url = await upload_image_to_imgbb(image_bytes)
-                if image_url:
-                    uploaded_urls.append(image_url)
-            except Exception as e:
-                print(f"Error al subir imagen: {e}")
-
-        usuarios_reportados = []
-        if len(interaction.message.embeds) > 1:
-            embed = interaction.message.embeds[1]
-            for field in embed.fields:
-                if field.name == "Usuarios reportados":
-                    usuarios_texto = field.value.strip('```').strip()
-                    lines = usuarios_texto.split('\n')
-                    
-                    current_id = None
-                    for line in lines:
-                        if line.startswith("ID: "):
-                            current_id = int(line[4:])
-                            usuarios_reportados.append(current_id)
-
-        if not usuarios_reportados:
-            usuarios_reportados = [self.usuario_reportado.id]
-
-        for reported_user_id in usuarios_reportados:
-            await mongo_report_storage.store_report(
-                user_id=0,
-                server_id=0,
-                reported_user_id=reported_user_id,
-                reason=self.report_reason,
-                imagen_files=uploaded_urls
-            )
-
-            await check_user_in_guilds(self.bot, reported_user_id, self.report_reason)
+        files = []
+        for attachment in message.attachments:
+            file = await attachment.to_file()
+            files.append(file)
         
-        notification_view = discord.ui.View()
-        notification_view.add_item(discord.ui.Button(
-            style=discord.ButtonStyle.link,
-            label="Servidor de Soporte",
-            url="https://discord.gg/eQ9uZSrrfZ"
-        ))
-        
-        notification_sent = False
-        try:
-            user = await self.bot.fetch_user(self.usuario_reporter.id)
-            await user.send(
-                f"🇪🇸 Tu reporte contra {self.usuario_reportado.name} en el servidor {self.servidor.name} ha sido **aceptado**. Gracias por ayudarnos a mantener la comunidad segura.\n\n"
-                f"🇬🇧 Your report against {self.usuario_reportado.name} in the server {self.servidor.name} has been **accepted**. Thank you for helping us keep the community safe.",
-                view=notification_view
-            )
-            notification_sent = True
-        except:
-            try:
-                security_config = await get_specific_field(self.servidor.id, "security")
-                if security_config and "channel" in security_config:
-                    alert_channel_id = security_config["channel"]
-                    alert_channel = self.bot.get_channel(alert_channel_id)
-                    
-                    if alert_channel:
-                        await alert_channel.send(
-                            f"{self.usuario_reporter.mention}\n\n🇪🇸 Tu reporte contra {self.usuario_reportado.name} en el servidor {self.servidor.name} ha sido **aceptado**. Gracias por ayudarnos a mantener la comunidad segura.\n\n"
-                            f"🇬🇧 Your report against {self.usuario_reportado.name} in the server {self.servidor.name} has been **accepted**. Thank you for helping us keep the community safe.",
-                            view=notification_view
-                        )
-                        notification_sent = True
-            except:
-                pass
-        
-        accepted_channel = self.bot.get_channel(1359190746896535903)
-        
-        if accepted_channel:
-            message = interaction.message
-            embeds = message.embeds.copy()
-            
-            files = []
-            for attachment in message.attachments:
-                file = await attachment.to_file()
-                files.append(file)
-            
-            if len(embeds) > 1:
-                embeds[1].set_footer(
-                    text=f"Aprobado por: {interaction.user.name} • {datetime.datetime.now(pytz.timezone('Europe/Madrid')).strftime('%d/%m/%Y %H:%M')}",
-                    icon_url=interaction.user.avatar.url if interaction.user.avatar else None
-                )
-            
-            await accepted_channel.send(embeds=embeds, files=files)
-            
-            await message.delete()
-        
-        language = await get_server_language(interaction.guild.id)
-        result_message = "Reporte aceptado ✅" if language == "es" else "Report accepted ✅"
-        if notification_sent:
-            if language == "es":
-                result_message += "\nEl usuario ha sido notificado."
-            else:
-                result_message += "\nThe user has been notified."
-        
-        await interaction.followup.send(result_message)
+        modal = AcceptReasonModal(
+            self.bot, 
+            self.usuario_reporter, 
+            self.servidor, 
+            self.usuario_reportado, 
+            message,
+            embeds, 
+            files,
+            self.report_reason
+        )
+        await interaction.response.send_modal(modal)
     
     @discord.ui.button(label="Rechazar", style=discord.ButtonStyle.danger)
     async def reject_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -362,7 +402,7 @@ class ReportButtonView(discord.ui.View):
                         invite_button.add_item(discord.ui.Button(
                             style=discord.ButtonStyle.link,
                             label="Unirse al Servidor de Soporte",
-                            url="https://discord.gg/eQ9uZSrrfZ"
+                            url="https://discord.gg/RG4JM59bet"
                         ))
 
                         await alert_channel.send(
@@ -390,7 +430,7 @@ class ReportButtonView(discord.ui.View):
             support_link.add_item(discord.ui.Button(
                 style=discord.ButtonStyle.link,
                 label="Unirse al Servidor de Soporte",
-                url="https://discord.gg/eQ9uZSrrfZ"
+                url="https://discord.gg/RG4JM59bet"
             ))
             
             language = await get_server_language(interaction.guild.id)
@@ -475,7 +515,7 @@ class CloseThreadView(discord.ui.View):
                 support_view.add_item(discord.ui.Button(
                     style=discord.ButtonStyle.link,
                     label="Servidor de Discord de Soporte",
-                    url="https://discord.gg/eQ9uZSrrfZ"
+                    url="https://discord.gg/RG4JM59bet"
                 ))
 
                 await user.send(
@@ -712,8 +752,11 @@ class ReportCommand(commands.Cog):
                         file_copies.append(file)
                     except Exception as e:
                         print(f"Error al procesar archivo adjunto: {e}")
-            
-            await report_channel.send(content="hola, esto es un reporte.", embeds=embeds, files=file_copies, view=view)
+                    
+            try: 
+                await report_channel.send(embeds=embeds, files=file_copies, view=view) 
+            except Exception as e: 
+                print(f"ERROR AL ENVIAR MENSAJE AL CANAL DE REPORTES: {e}")
             
             user_mentions = ", ".join([user.mention for user in reported_users])
             if language == "es":

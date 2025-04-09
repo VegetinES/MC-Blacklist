@@ -7,6 +7,7 @@ import webserver
 import sys
 import datetime
 from commands.security.mongo_utils import update_server_data
+from commands.security.mongo import mongo_report_storage
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 
@@ -20,6 +21,7 @@ intents.voice_states = True
 bot = commands.Bot(command_prefix='%', intents=intents)
 
 bot.remove_command('help')
+server_invites = {}
 
 @bot.event
 async def on_ready():
@@ -36,14 +38,137 @@ async def on_ready():
     except Exception as e:
         print(f"Error sincronizando slash commands: {e}")
 
+async def get_server_invite(guild):
+    if guild.id in server_invites:
+        try:
+            invite = await bot.fetch_invite(server_invites[guild.id])
+            if invite:
+                return invite
+        except:
+            pass
+    
+    for channel in guild.channels:
+        if isinstance(channel, discord.TextChannel) and channel.permissions_for(guild.me).create_instant_invite:
+            try:
+                invites = await channel.invites()
+                for invite in invites:
+                    if invite.inviter == bot.user and invite.max_age == 0:
+                        server_invites[guild.id] = invite.url
+                        return invite
+            except:
+                continue
+            
+            try:
+                invite = await channel.create_invite(max_age=0, max_uses=0, unique=False, reason="MC Blacklist Bot - Servidor nuevo")
+                server_invites[guild.id] = invite.url
+                return invite
+            except:
+                continue
+    
+    return None
+
 @bot.event
 async def on_guild_join(guild):
-    try:
+    try:   
+        blocked_servers = await mongo_report_storage.get_blocked_servers()
+        
+        if guild.id in blocked_servers:
+            await guild.leave()
+            return
+            
         server_id = guild.id
         await update_server_data(server_id, "language", "es")
-        print(f"Idioma establecido a español para el servidor: {guild.name} (ID: {guild.id})")
+        
+        log_channel_id = 1359542831122743417
+        
+        log_channel = bot.get_channel(log_channel_id)
+        
+        if log_channel:
+            try:
+                creation_timestamp = int(guild.created_at.timestamp())
+                
+                admin_users = []
+                
+                for member in guild.members:
+                    if member.guild_permissions.administrator:
+                        admin_users.append(f"  - `{member.name}` (ID: {member.id})")
+                
+                
+                embed = discord.Embed(
+                    title="Nuevo Servidor",
+                    description=(
+                        f"El bot ha sido añadido al servidor `{guild.name}` (ID: {guild.id}). \n"
+                        f"- El servidor fue creado el <t:{creation_timestamp}:D>\n"
+                        f"- Tiene `{guild.member_count}` usuarios\n"
+                        f"- El owner es `{guild.owner.name if guild.owner else 'Desconocido'}` "
+                        f"(ID: {guild.owner.id if guild.owner else 'Desconocido'})\n"
+                        f"- Los usuarios con permisos de **Administrador** son:\n"
+                        f"{chr(10).join(admin_users) if admin_users else '  - Ninguno'}"
+                    ),
+                    color=0xFEF6,
+                )
+                
+                embed.set_image(url="https://i.imgur.com/VMbCHbF.png")
+                
+                if guild.icon:
+                    embed.set_thumbnail(url=guild.icon.url)
+                
+                view = None
+                invite = await get_server_invite(guild)
+                
+                if invite:
+                    view = discord.ui.View()
+                    view.add_item(discord.ui.Button(
+                        style=discord.ButtonStyle.link,
+                        label="Unirse al Servidor",
+                        url=invite.url
+                    ))
+                    
+                    embed.add_field(
+                        name="Invitación",
+                        value=f"[Click aquí para unirse al servidor]({invite.url})",
+                        inline=False
+                    )
+                
+                await log_channel.send(embed=embed, view=view)
+            except Exception as e:
+                print(f"Error al crear o enviar el embed: {str(e)}")
+        else:
+            print(f"No se pudo encontrar el canal de logs con ID {log_channel_id}")
     except Exception as e:
-        print(f"Error al establecer el idioma por defecto en el servidor {guild.name} (ID: {guild.id}): {e}")
+        print(f"Error general en on_guild_join: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+@bot.event
+async def on_guild_remove(guild):
+    try:
+        blocked_servers = await mongo_report_storage.get_blocked_servers()
+        
+        if guild.id in blocked_servers:
+            return
+        
+        log_channel_id = 1359542831122743417
+        log_channel = bot.get_channel(log_channel_id)
+        
+        if log_channel:
+            embed = discord.Embed(
+                title="Servidor Abandonado",
+                description=f"El bot ha salido del servidor `{guild.name}` - ID: {guild.id}",
+                color=discord.Color.red(),
+                timestamp=datetime.datetime.now()
+            )
+            
+            if guild.icon:
+                embed.set_thumbnail(url=guild.icon.url)
+                
+            await log_channel.send(embed=embed)
+        else:
+            print(f"No se pudo encontrar el canal de logs con ID {log_channel_id}")
+    except Exception as e:
+        print(f"Error en on_guild_remove: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
 async def load_extensions(directories):
     total_extensions = 0

@@ -17,7 +17,7 @@ async def show_security_help(interaction):
                 name="📋 Permisos",
                 value=(
                     "Los comandos de seguridad tienen dos niveles de permisos:\n\n"
-                    "🔹 **Administradores:** Pueden usar todos los comandos (excepto `/blacklist modificar` y `/blacklist añadir`)\n"
+                    "🔹 **Administradores:** Pueden usar todos los comandos (excepto `/blacklist modify`, `/blacklist add`, `/blacklist block`, `/blacklist leave` y `/blacklist image`)\n"
                     "🔹 **Roles con permisos de seguridad:** Pueden usar `/blacklist help`, `/blacklist list`, `/blacklist userinfo`, `/blacklist report` y `/blacklist info`\n\n"
                     "Para añadir roles con permisos de seguridad, un administrador debe usar `/blacklist perms`."
                 ),
@@ -106,7 +106,7 @@ async def show_security_help(interaction):
                 name="📋 Permissions",
                 value=(
                     "Security commands have two permission levels:\n\n"
-                    "🔹 **Administrators:** Can use all commands (except `/blacklist modificar` and `/blacklist añadir`)\n"
+                    "🔹 **Administrators:** Can use all commands (except `/blacklist modify`, `/blacklist add`, `/blacklist block`, `/blacklist leave` and `/blacklist image`)\n"
                     "🔹 **Roles with security permissions:** Can use `/blacklist help`, `/blacklist list`, `/blacklist userinfo` and `/blacklist report`\n\n"
                     "To add roles with security permissions, an administrator must use `/blacklist perms`."
                 ),

@@ -91,7 +91,6 @@ class BlacklistCommands(commands.GroupCog, name="blacklist"):
             return
 
         cog = self.bot.get_cog("BlacklistAdd")
-        print(f"[DEBUG] BlacklistAdd cog: {cog}")
         if cog:
             await cog.add_to_blacklist(
                 interaction, 
@@ -107,7 +106,7 @@ class BlacklistCommands(commands.GroupCog, name="blacklist"):
         else:
             await interaction.response.send_message("Error: El módulo de añadir usuario no está cargado.", ephemeral=True)
     
-    @app_commands.command(name="image", description="Añade imágenes a un reporte usando un código de validación")
+    @app_commands.command(name="image", description="Add images to a report using a validation code")
     @app_commands.describe(
         codigo="Código de validación proporcionado por el bot",
         imagen1="Primera imagen (obligatoria)",
@@ -149,7 +148,7 @@ class BlacklistCommands(commands.GroupCog, name="blacklist"):
         else:
             await interaction.response.send_message("Error: El módulo de imágenes no está cargado.", ephemeral=True)
     
-    @app_commands.command(name="info", description="Muestra información sobre el bot MC Blacklist")
+    @app_commands.command(name="info", description="Shows information about the MC Blacklist bot")
     async def blacklist_info(self, interaction: discord.Interaction):
         cog = self.bot.get_cog("BlacklistInfo")
         if cog:
@@ -300,6 +299,32 @@ class BlacklistCommands(commands.GroupCog, name="blacklist"):
             return
         
         await change_language(interaction, language)
+    
+    @app_commands.command(name="block", description="Block servers from using the bot")
+    @app_commands.describe(
+        acción="Acción a realizar",
+        servidor="IDs de servidores a bloquear/desbloquear (separados por espacios)"
+    )
+    @app_commands.choices(acción=[
+        app_commands.Choice(name="añadir", value="añadir"),
+        app_commands.Choice(name="eliminar", value="eliminar"),
+        app_commands.Choice(name="datos", value="datos")
+    ])
+    async def block_command(self, interaction: discord.Interaction, acción: str, servidor: str = None):
+        cog = self.bot.get_cog("BlacklistBlock")
+        if cog:
+            await cog.block_command(interaction, acción, servidor)
+        else:
+            await interaction.response.send_message("Error: El módulo de bloqueo no está cargado.", ephemeral=True)
+    
+    @app_commands.command(name="leave", description="Make the bot leave a server")
+    @app_commands.describe(servidor="ID del servidor del que debe salir el bot")
+    async def leave_command(self, interaction: discord.Interaction, servidor: str):
+        cog = self.bot.get_cog("BlacklistLeave")
+        if cog:
+            await cog.leave_command(interaction, servidor)
+        else:
+            await interaction.response.send_message("Error: El módulo de leave no está cargado.", ephemeral=True)
     
     def is_admin(self, interaction: discord.Interaction) -> bool:
         if interaction.user.guild_permissions.administrator:

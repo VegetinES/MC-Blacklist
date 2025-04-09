@@ -11,6 +11,7 @@ class MongoReportStorage:
             self.db = self.client[database_name]
             self.reports_collection = self.db['reports']
             self.alerts_collection = self.db['alerts']
+            self.block_collection = self.db['block']
             print("MongoDB connection established successfully.")
         except Exception as e:
             print(f"Error establishing MongoDB connection: {e}")
@@ -195,6 +196,50 @@ class MongoReportStorage:
             return True
         except Exception as e:
             print(f"Error updating full server alerts: {e}")
+            return False
+    
+    async def get_blocked_servers(self):
+        try:
+            block_doc = await self.block_collection.find_one({'_id': 'servers'})
+            if block_doc:
+                return block_doc.get('servers', [])
+            else:
+                await self.block_collection.insert_one({'_id': 'servers', 'servers': []})
+                return []
+        except Exception as e:
+            print(f"Error retrieving blocked servers: {e}")
+            return []
+    
+    async def add_blocked_server(self, server_id):
+        try:
+            block_doc = await self.block_collection.find_one({'_id': 'servers'})
+            if block_doc:
+                if server_id not in block_doc.get('servers', []):
+                    await self.block_collection.update_one(
+                        {'_id': 'servers'},
+                        {'$push': {'servers': server_id}}
+                    )
+                    return True
+                return False
+            else:
+                await self.block_collection.insert_one({'_id': 'servers', 'servers': [server_id]})
+                return True
+        except Exception as e:
+            print(f"Error adding blocked server: {e}")
+            return False
+    
+    async def remove_blocked_server(self, server_id):
+        try:
+            block_doc = await self.block_collection.find_one({'_id': 'servers'})
+            if block_doc and server_id in block_doc.get('servers', []):
+                await self.block_collection.update_one(
+                    {'_id': 'servers'},
+                    {'$pull': {'servers': server_id}}
+                )
+                return True
+            return False
+        except Exception as e:
+            print(f"Error removing blocked server: {e}")
             return False
 
 mongo_report_storage = MongoReportStorage()
