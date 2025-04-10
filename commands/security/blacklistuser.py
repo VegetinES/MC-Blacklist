@@ -353,7 +353,6 @@ class EvidenceView(discord.ui.View):
                 embed.set_image(url=current_image)
 
                 await interaction.response.edit_message(
-                    content=f"**URL de la imagen:**\n{current_image}" if self.language == "es" else f"**Image URL:**\n{current_image}",
                     embed=embed,
                     view=self
                 )
